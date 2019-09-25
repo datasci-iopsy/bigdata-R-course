@@ -2,3 +2,6 @@
 */.ipynb_checkpoints/*
 
 *.pdf
+*.Rmd
+*.html
+*.nb.html
