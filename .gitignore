@@ -2,6 +2,10 @@
 */.ipynb_checkpoints/*
 
 *.pdf
-*.Rmd
 *.html
 *.nb.html
+*.vscode/
+*/.vscode/*
+*.Rhistory
+*/.Rhistory/*
+

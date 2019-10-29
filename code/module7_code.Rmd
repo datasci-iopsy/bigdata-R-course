@@ -1,0 +1,166 @@
+---
+title: 'Module 7: Data Visualization'
+author: "Demetrius K. Green"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This week, you’ll be visualizing datasets from a past project. All plots should 
+be created using **ggplot2** unless otherwise specified. When linking portions of 
+a ggplot(), use separate lines for each new "+" phrase. Download week3.csv from 
+Project 3 into your data folder.
+
+*Warning.* If you find that your graphs aren’t what you expect from commands you 
+think are correct, you probably messed up something in your data wrangling steps.
+
+## Data Import & Cleaning
+
+```{r, include=FALSE}
+library(tidyverse)
+library(psych)
+library(kableExtra)
+```
+
+Import the *week3.csv* and do the following data wrangling steps:
+
+- convert the dataset to a tibble
+- convert any data types that were not imported correctly into their correct
+types using tidy functions where possible 
+- relabel factors according to Table 1 (refer to worksheet)
+- remove all the cases that failed the manipulation check (i.e., responded with 
+anything other than a 1 to q6)
+- drop q6 from the final tbl
+
+```{r, echo = F}
+week7_tbl = as_tibble(read.csv('../data/landers_wk3data.csv')) %>% 
+    mutate_at(vars('timeStart', 'timeEnd'), as.POSIXct) %>% 
+    mutate(
+        condition = recode(condition, A = 'Block A', B = 'Block B', C = 'Control'), 
+        gender = recode(gender, M = 'Male', F = 'Female')) %>%
+    filter(q6 == 1) %>% 
+    select(-q6)
+```
+
+\newpage
+
+## Visualization
+
+Create a single figure that displays a scatterplot and correlation matrix of 
+q1-q5 and q7-q10 as well as density plots (i.e., the line graph version of a 
+histogram). **Do not use ggplot()**.
+
+```{r, message=F, warning=F, echo = F}
+library("GGally")
+
+week7_tbl %>% 
+    select(q1:q10) %>% 
+    ggpairs()
+```
+
+```{r, echo=F, include=F}
+dens = apply(week7_tbl[, 5:13], 2, density)
+
+plot(NA, xlim = range(sapply(dens, "[", "x")), ylim = range(sapply(dens, "[", "y"))) 
+test = mapply(lines, dens, col = 1:length(dens))
+
+legend("topright", legend = names(dens), fill = 1:length(dens), cex = .65)
+```
+
+\newpage
+
+Check for differences in Q1 over time by creating a plot of "*timeStart*" on the 
+x-axis and q1 on the y-axis that looks like Fig 1. 
+
+```{r, echo = F}
+week7_tbl %>% 
+    ggplot(aes(timeStart, q1)) +
+    geom_point() +
+    labs(
+        title = 'Fig 1', 
+        x = 'Date of Experiments', 
+        y = 'Q1 Score') +
+    theme(
+        plot.title = element_text(face = 'bold'))
+```
+
+\newpage 
+
+Check for gender differences in the Q1/Q2 relationship by creating a figure that 
+looks like Fig 2. Note that this is a jitter plot, so your dot positions will
+probably not look the same. 
+
+```{r, echo = F}
+week7_tbl %>% 
+    ggplot(aes(q1, q2)) + 
+    geom_jitter(aes(color = gender))
+```
+
+\newpage
+
+Check for gender differences in the Q1/Q2 relationship again, but this time by
+creating two side-by-side plots as shown in Fig 3 (also a jitter plot)
+
+```{r, echo = F}
+week7_tbl %>%
+    ggplot(aes(q1, q2)) +
+    geom_jitter() + 
+    facet_wrap(~gender) +
+    labs(
+        title = 'Fig 3', 
+        x = 'Score on Q1', 
+        y = 'Score on Q2') + 
+    theme(
+        plot.title = element_text(face = 'bold')
+    )
+```
+
+\newpage
+
+Using a single pipe, create a plot displaying the experimental time elapsed in 
+seconds between "*timeStart*" and "*timeEnd*" split by gender, which looks like 
+Fig 4.
+
+```{r, echo = F}
+week7_tbl %>% 
+    mutate(
+        'timeSpent_secs' = as.numeric(
+            difftime(timeEnd, timeStart, units = 'secs')
+            )
+        ) %>% 
+    ggplot(aes(gender, timeSpent_secs)) +
+    geom_boxplot(aes(x = gender)) +
+    labs(
+        title = 'Fig 4', 
+        x = 'Gender', 
+        y = 'Time Elapsed (secs)') +
+    theme(plot.title = element_text(face = 'bold'))
+```
+
+\newpage
+
+Recreate Fig 5. Jitter may be slightly different but should be similar. The 
+background of the legend is 12.5% gray. *Hint:* Tackle this figure one plus at a 
+time, checking your work as you go.
+
+```{r, echo = F}
+week7_tbl %>% 
+    ggplot(aes(q5, q7)) +
+    geom_jitter(aes(color = condition), width = .05) +
+    geom_line(aes(color = condition), 
+              stat = 'summary_bin', binwidth = 3, fun.y = 'mean') +
+    labs(
+        fill = "Experimental Condition",
+        title = 'Fig 5', 
+        x = 'Score on Q5', 
+        y = 'Score on Q7'
+    ) +
+    theme(
+        plot.title = element_text(face = "bold"), 
+        legend.background = element_rect(fill = '#DFDFDF'), 
+        legend.position = "bottom"
+    )
+    
+```
+

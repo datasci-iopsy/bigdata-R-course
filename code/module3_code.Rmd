@@ -1,0 +1,105 @@
+---
+title: "Landers Module 3 Code"
+author: "Demetrius Green"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r include=F}
+#ensure working dir is correct
+#load appropriate libraries
+
+library(tidyverse)
+library(psych)
+```
+
+Read in raw data and create df!
+```{r}
+raw_df = read.csv("../data/landers_wk3data.csv", header = T)
+glimpse(raw_df) 
+```
+
+Recast *timeStart* & *timeEnd* into POSIX format!
+```{r}
+raw_df = raw_df %>%
+    mutate_at(vars('timeStart', 'timeEnd'), as.POSIXct)
+#glimpse(raw_df) #notice the vars changed from 'factor' to 'POSIX'
+```
+
+Research assistants participated during the month of June - remove them and create
+a new df. Also, *q6*was a check-response item keyed for 1.
+```{r}
+#research assistants participated during the month of June
+#remove them and create a new df; q6 was check response item keyed for 1
+clean_df = raw_df %>%
+    filter_at(vars('timeStart', 'timeEnd', 'q6'), 
+              any_vars(. >= "2017-07-01 00:00:00" & q6 == 1))
+```
+
+# M3.Analysis
+
+Save the total time spent on study in seconds as a new variable. Also, recast 
+*timeSpent* as a number.
+```{r}
+#save total time spent on study in seconds as a new variable
+#recast timeSpent as num
+clean_df = clean_df %>%
+    mutate('timeSpent_secs' = as.numeric(difftime(
+            timeEnd, timeStart, units = 'secs')))
+```
+\newpage
+
+Create a histogram of timeSpent!
+```{r}
+#ggplot2/tidyverse syntax
+ggplot(clean_df, aes(x = timeSpent_secs)) + 
+    geom_histogram(stat = "bin", binwidth = 90,
+                   color = "white", 
+                   fill = "dark green") +
+    labs(title = "Research Study Time Expenditure", 
+         x = "# of seconds") +
+    theme_dark()
+
+#base R syntax
+hist(clean_df$timeSpent_secs, col = "orange", 
+     main = "Research Study Time Expenditure", xlab = "# of seconds")
+```
+
+Iterate table function over the 5th and 14th columns of df
+```{r}
+freq_tbls_list = lapply(clean_df[, c(5, 14)], table)
+freq_tbls_list
+
+#tidyverse syntax
+# clean_df %>% 
+#     select('q1', 'q10') %>%
+#     lapply(table)
+```
+
+```{r echo = F, warning = F, message=F}
+library(gridExtra)
+
+bp1 = barplot(freq_tbls_list$q1)
+bp2 = barplot(freq_tbls_list$q10)
+
+bp1
+bp2
+```
+
+Participants should have answered *q1* with a greater or equal value to what they
+answered *q2* with, and they should never have answered *q2* with the same value
+as what they answered *q3* with. Display a count of the number of times in *clean_df* 
+that this actually happened.
+
+```{r}
+#tidyverse syntax
+clean_df %>% 
+  filter_at(vars('q1', 'q2', 'q3'), any_vars(q1 >= q2 & q2 != q3)) %>%
+  count()
+```
+
+
+
+
