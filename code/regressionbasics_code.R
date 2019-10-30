@@ -19,7 +19,7 @@ pir_dat = pir_raw %>%
         list('SPOSTMIN' = 0, 'SACTMIN' = 0)) %>% 
     mutate(
         'date' = mdy(date),
-        'waittime' = SPOSTMIN + SACTMIN, 
+        'waittime' = SPOSTMIN + SACTMIN,
         'SPOSTMIN' = NULL, 
         'SACTMIN' = NULL) %>% 
     filter(waittime != -999) #ride closed indicator
