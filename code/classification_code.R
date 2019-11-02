@@ -3,6 +3,7 @@ rm(list = ls())
 
 #load appropriate libraries
 library(tidyverse)
+library(broom) 
 library(psych)
 library(lubridate)
 
@@ -16,99 +17,126 @@ meta_raw = read_csv('../data/disneydata/metadata.csv', col_names = TRUE,
 
 #wrangle pirate of carribean df
 pir_dat = pir_raw %>% 
-    replace_na(
-        list('SPOSTMIN' = 0, 'SACTMIN' = 0)) %>% 
+    replace_na(list('SPOSTMIN' = 0, 'SACTMIN' = 0)) %>% 
     mutate(
         'date' = mdy(date),
         'waittime' = SPOSTMIN + SACTMIN,
-        'fct_waittime' = ifelse(waittime <= 25, 'short', 'long'), #dichotomize feature
+        #dichotomize feature; is it a short wait?
+        'fct_waittime' = factor(ifelse(waittime <= 25, 'short', 'long')),
         'SPOSTMIN' = NULL, 
         'SACTMIN' = NULL) %>% 
-    mutate_at('fct_waittime', list(as.factor)) %>% 
     filter(waittime != -999) #ride closed indicator
 
 #wrangle metadata before merging
 meta_dat = meta_raw %>% 
     rename_all(list(tolower)) %>% #changes column names to lowercase
-    select(date, dayofweek, monthofyear, wdwmeantemp, insession_central_fl, 
-           mkhoursemh) %>% 
-    mutate(date = mdy(date), 
-           #01/01/12 was a Thurs
-           dayofweek = recode(dayofweek,
-                              `1` = 'Thurs', `2` = 'Fri', `3` = 'Sat',
-                              `4` = 'Sun', `5` = 'Mon', `6` = "Tues", 
-                              `7` = 'Wed'), 
-           monthofyear = recode(monthofyear, 
-                                `1` = 'Jan', `2` = 'Feb', `3` = 'Mar', 
-                                `4` = 'Apr', `5` = 'May', `6` = 'Jun', 
-                                `7` = 'July', `8` = 'Aug', `9` = 'Sept', 
-                                `10` = 'Oct', `11` = 'Nov', `12` = 'Dec'), 
-           insession_central_fl = parse_number(insession_central_fl) / 100, 
-           wdwmeantemp = as.double(wdwmeantemp), 
-           mkhoursemh = as.double(mkhoursemh)
+    select(
+        date, 
+        'month' = monthofyear, 
+        season, 
+        'temp_mean' = wdwmeantemp, 
+        'insesh_fl' = insession_florida, 
+        'hist_precip' = weather_wdwprecip, 
+        'total_hrs' = mkhoursemh, 
+        'cap_lost' = capacitylost_mk, 
+        'parades' = mkprdday) %>% 
+    mutate(
+        date = mdy(date), 
+        month = recode(factor(month), 
+                       `1` = 'Jan', `2` = 'Feb', `3` = 'Mar', `4` = 'Apr', 
+                       `5` = 'May', `6` = 'Jun', `7` = 'July', `8` = 'Aug', 
+                       `9` = 'Sept', `10` = 'Oct', `11` = 'Nov', `12` = 'Dec'),
+        season = factor(str_to_title(season)), 
+        temp_mean = as.double(temp_mean),
+        insesh_fl = parse_number(insesh_fl) / 100 #percentage
            ) %>%
-mutate_at(c('dayofweek', 'monthofyear'), list(as.factor))
+    mutate_if(is.numeric, list(as.double)) %>% 
+    drop_na()
 
 #merge dfs by date; rm 2nd column of datetimes
-mrg_dat = merge(pir_dat, meta_dat, by = 'date')[, -2] %>% 
-    drop_na() #rm NA values
+mrg_dat = merge(pir_dat, meta_dat, by = 'date') %>%
+    select(-c(date, datetime, waittime))
 
-#this would be a good place ot explore the data
+#summary statistics for numerical features
+sum_stats = mrg_dat %>% 
+    select_if(is.numeric) %>% 
+    sapply(function(x) broom::tidy(summary((x)))) %>% 
+    as.data.frame()
+sum_stats
 
-#bar graph of categorical variables
-day_order = c('Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat')
-month_order = c('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'July', 'Aug', 'Sept', 
-              'Oct', 'Nov', 'Dec')
+#normalise the data
+normalize = function(x) {
+    return(
+        (x - min(x)) / (max(x) - min(x))
+    )
+}
 
-count(mrg_dat, dayofweek, monthofyear, fct_waittime) %>% 
-    ggplot(aes(x = factor(dayofweek, levels = rev(day_order)), y = n, 
-               fill = fct_waittime)) + 
-        geom_bar(stat = 'identity') + 
-        coord_flip() + 
-    facet_wrap(~factor(monthofyear, levels = month_order), ncol = 4) + 
-    theme_light() + 
-    labs(
-        title = 'Disney\'s Pirates of the Carribean Attraction', 
-        subtitle = 'Daily Waittime by Month',
-        x = 'Day of the Week', 
-        y = 'Number of Riders'
-        ) + 
-    theme(legend.title = element_blank()) + 
-    scale_fill_discrete(labels = c('Long Wait', 'Short Wait'))
+#apply function to dataset
+mrg_dat_norm = mrg_dat %>% 
+    mutate_if(is.numeric, normalize)
     
 
-#scatterplot of disney's mean temp, the # of hrs the park is open by waittime
-(sct_plot = ggplot(mrg_dat, aes(x = wdwmeantemp, y = mkhoursemh, 
-                               color = fct_waittime)) + 
-        geom_point(size = 1))
+#required to split data
+library(caTools)
+set.seed(984) #for reproducibility 
+
+sample = sample.split(mrg_dat_norm, SplitRatio = .75)
+
+#training and testing dfs
+train = subset(mrg_dat_norm, sample == TRUE)
+test = subset(mrg_dat_norm, sample == FALSE)
+
+# #complete logistic regression analysis
+# 
+# #fit includes all variables and no interactions
+# fit = glm(fct_waittime ~ ., data = train, family = 'binomial')
+# 
+# #fit2 includes all variables and two interactions
+# fit2 = glm(fct_waittime ~ . + season*hist_precip + insesh_fl*parades, data = train, 
+#            family = 'binomial')
+# 
+# summary(fit)
+# summary(fit2)
+# 
+# prop.table(table(train$fct_waittime)) %>% 
+#     round(2)
+# 
+# exp(coef(fit2))
+
+#load aret package
+library(caret)
+
+#run logistic model
+log_mod = caret::train(form = fct_waittime ~ ., 
+                       data = train, 
+                       trControl = trainControl(method = 'cv', number = 5), 
+                       method = 'glm', 
+                       family = 'binomial')
+
+#get raw output of predictions
+log_mod_pred = predict(log_mod, test, type = 'raw')
+
+#function to calculate model accuracy
+calc_acc = function(actual, predicted) {
+    mean(actual == predicted)
+}
+
+# 64.2% % accuracy
+calc_acc(actual = test$fct_waittime, 
+         predicted = predict(log_mod, newdata = test))
+
+#confusion matrix
+confusionMatrix(log_mod_pred, test$fct_waittime)
+
+#knn model
+knn_mod = caret::train(fct_waittime ~ ., 
+                       data = train, 
+                       method = 'knn', 
+                       trControl= trainControl(method = 'cv', number = 5,), 
+                       tuneLength = 10)
+knn_mod
 
 
-#boxplots
-(temp_plot = ggplot(mrg_dat, aes(x = fct_waittime, y = wdwmeantemp, 
-                                fill = fct_waittime)) + 
-        geom_boxplot() + 
-        coord_flip())
-
-
-(hrs_plot = ggplot(mrg_dat, aes(x = fct_waittime, y = mkhoursemh, 
-                               fill = fct_waittime)) + 
-        geom_boxplot()+ 
-        coord_flip())
-
-library(cowplot)
-first_row = plot_grid(sct_plot)
-second_row = plot_grid(temp_plot, hrs_plot)
-
-#final plot layout
-(gg_all = plot_grid(first_row, second_row, ncol = 1))
-
-#complete logistic regression analysis
-fit = glm(fct_waittime ~ dayofweek + monthofyear + wdwmeantemp + 
-              insession_central_fl + mkhoursemh + wdwmeantemp*insession_central_fl, 
-          data = mrg_dat[1:100000, ], 
-          family = 'binomial')
-
-summary(fit)
 
 
 
@@ -118,4 +146,3 @@ summary(fit)
 
 
 
-summary(fit)
