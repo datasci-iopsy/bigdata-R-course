@@ -1,0 +1,244 @@
+---
+title: "Classification Assignment"
+author: "Demetrius Green"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+---
+
+```{r, global_options, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+```
+
+To illustrate how classification works, this exercise extends the Regression Basics assignment by dichotomizing the criterion (posted wait times) where a wait $<=$ 25 minutes was labelled *'short'* and $>$ 25 minutes was labelled '*long*.' In order to repeat the analysis from last time, logistic regression was performed. Let's begin by loading some useful libraries. 
+
+```{r, initial_libs}
+#rm(list = ls()) #keep env cln!
+
+#load appropriate libraries
+library(tidyverse)
+library(broom) 
+library(psych)
+library(lubridate)
+```
+
+## Data wrangling 
+
+Data wrangling efforts are listed as follows:
+
+- `fct_waitime` was converted to a factor with two levels (short and long)
+- all missing values were removed from both datasets 
+- features:
+  - average temperature at Disney world 
+  - percentage of schools enrolled in the state of FL
+  - historical average precipitation for each day 
+  - total number of hours the Magic Kingdom (MK) park was open
+  - total hourly capacity lost on closed attractions in MK 
+  - number of daytime parades at MK
+
+```{r, raw_data, message=FALSE}
+#read in pirates of carribean data
+pir_raw = read_csv('../data/disneydata/pirates_of_caribbean.csv', col_names = T)
+
+#read in metaata
+meta_raw = read_csv('../data/disneydata/metadata.csv', col_names = TRUE, 
+                    #change guess arg to better guage col type
+                    guess_max = 5000)
+```
+
+```{r, data_wrangling}
+#wrangle pirate of carribean df
+pir_dat = pir_raw %>% 
+    replace_na(list('SPOSTMIN' = 0, 'SACTMIN' = 0)) %>% 
+    mutate(
+        'date' = mdy(date),
+        'waittime' = SPOSTMIN + SACTMIN,
+        #dichotomize feature; is it a short wait?
+        'fct_waittime' = factor(ifelse(waittime <= 25, 'short', 'long')),
+        'SPOSTMIN' = NULL, 
+        'SACTMIN' = NULL) %>% 
+    filter(waittime != -999) #ride closed indicator
+
+#wrangle metadata before merging
+meta_dat = meta_raw %>% 
+    rename_all(list(tolower)) %>% #changes column names to lowercase
+    select(
+        date, 
+        'month' = monthofyear, 
+        season, 
+        'temp_mean' = wdwmeantemp, 
+        'insesh_fl' = insession_florida, 
+        'hist_precip' = weather_wdwprecip, 
+        'total_hrs' = mkhoursemh, 
+        'cap_lost' = capacitylost_mk, 
+        'parades' = mkprdday) %>% 
+    mutate(
+        date = mdy(date), 
+        month = recode(factor(month), 
+                       `1` = 'Jan', `2` = 'Feb', `3` = 'Mar', `4` = 'Apr', 
+                       `5` = 'May', `6` = 'Jun', `7` = 'July', `8` = 'Aug', 
+                       `9` = 'Sept', `10` = 'Oct', `11` = 'Nov', `12` = 'Dec'),
+        season = factor(str_to_title(season)), 
+        temp_mean = as.double(temp_mean),
+        insesh_fl = parse_number(insesh_fl) / 100 #percentage
+           ) %>%
+    mutate_if(is.numeric, list(as.double)) %>% 
+    drop_na()
+```
+
+Since we have a variety of different features **and** a binary outcome, classification techniques will yield far more robust results compared to linear regression since the latter model is based on the assumption of a continuous outcome. 
+
+## Merging data and metadata
+
+When working with big data, it's not unusual to have a data file as well as a metadata file (a set of data that describes and gives additional information about other data). These two datasets were merged by `date`; summary statistics for the numerical features are below. 
+
+```{r, summary_stats}
+#merge dfs by date; rm 2nd column of datetimes
+mrg_dat = merge(pir_dat, meta_dat, by = 'date') %>%
+    select(-c(date, datetime, waittime))
+
+mrg_dat %>% 
+    select_if(is.numeric) %>%
+    sapply(function(x) summary(x)) %>% 
+    data.frame()
+
+# #summary statistics for numerical features using tidy; rmarkdown has issues rendering
+# sum_stats = mrg_dat %>% 
+#     select_if(is.numeric) %>% 
+#     sapply(function(x) broom::tidy(summary((x)))) %>% 
+#     as.data.frame()
+```
+
+## Normalizing data
+
+It's clear to see that the numerical features are dissimilar in their respective metrics. This can cause a plethora of issues when implementing any ML algortihms, especially classifiers, so one method to circumvent this is problem to standardize the data. Although there are many different techniques that can accomplish this task, normalization was used for the current analyses. 
+
+```{r, norm_func}
+#normalise the data
+normalize = function(x) {
+    return(
+        (x - min(x)) / (max(x) - min(x))
+    )
+}
+
+#apply function to dataset
+mrg_dat_norm = mrg_dat %>% 
+    mutate_if(is.numeric, normalize)
+```
+
+```{r, cln_env, include=FALSE}
+#At this point, there are a lot of relatively large files in our environment so it's good practice #to clear what will not be necessary - R relies heavily on memory availablity. 
+
+rm(list = ls()[grep("meta_|pir_", ls())])
+rm(mrg_dat)
+```
+
+## Splitting samples: Training and test datasets
+
+```{r, splitting, message=FALSE, warning=F}
+#required to split data and preprocessing
+library(caTools)
+library(caret)
+library(doMC) #parallelization
+registerDoMC(cores = 4)
+
+set.seed(984) #for reproducibility 
+
+sample = sample.split(mrg_dat_norm, SplitRatio = .75)
+
+#training and testing dfs
+train = subset(mrg_dat_norm, sample == TRUE)
+test = subset(mrg_dat_norm, sample == FALSE) 
+```
+
+# Logistic regression model
+
+The logit model will be estimating more paramaters than the previous regression exercise model; two additional variables were included from the metadata as well as added interaction term. The `caret` package in R is tremendously powerful and full of ML algorithms, preprocessing functions, tuning parameters, and much more. The model run in the current assignment utilizes cross validation with $k$ (folds) = 5. We call the `glm` method to specify we are running a logistic model and the `binomial` call specifies a binary outcome.
+
+```{r, logit_model}
+#run logistic model
+log_mod = caret::train(fct_waittime ~. + season*hist_precip + cap_lost*total_hrs, 
+                       data = train, 
+                       trControl = trainControl(method = 'cv', number = 5), 
+                       method = 'glm', 
+                       family = 'binomial')
+
+#get raw output of predictions
+log_mod_pred = predict(log_mod, newdata = test, type = 'raw')
+```
+
+This is a relatively complex logit model and an overall summary can be viewed using the `summary()` command. Out of the 51 total $\beta$ coefficient estimates, the following were non-significant in predicting a long waittime:
+
+```{r, non_sig_p, echo=FALSE, message=F, warning=F}
+logit_sum = summary(log_mod)$coefficients %>% 
+  round(2) %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  select(-4) %>% 
+  rename('Betas' = 1, 'Est' = 2, 'p_Value' = 4) %>% 
+  filter(p_Value > .05)
+logit_sum
+```
+
+Though `caret` provides a lot of model information, we can build a function to calculate the accuracy of the model based on the actual and predicted values. For the logistic model, we can see a reported accuracy of **64.4%**.
+
+```{r, acc_func}
+#function to calculate model accuracy
+calc_acc = function(actual, predicted) {
+    mean(actual == predicted)
+}
+
+# 64.4% % accuracy
+calc_acc(actual = test$fct_waittime, 
+         predicted = predict(log_mod, newdata = test))
+```
+
+# K-nearest neighbor (K)
+
+KNN is powerful, nonparametric (i.e., the model makes no underlying assumptions about the data) classifier whose output is conceptually easier to intepret compared to logistic regression, notwithstanding it's own disadvantages. For instance, KNN algorithms require numerical features because some form of distance calculation is required - it's not unlikely that some of the predicators are categorical (ordered or unordered). It's not enough to simply convert a categorical feature to a numerical one because levels within the factor do not operate the same as discrete or interval data. The distance from 1 to 3 is different than Winter to Summer (there is not true mathematically distance anyway). 
+
+There are multiple ways to account for this, and `caret` even has some built in functionality to preprocess data with these restrictions. Dummy coding is one of the more efficacious techniques used to handle categorical feature processing from what I've gleaned online. [Dummy coding](https://en.wikipedia.org/wiki/Dummy_variable_(statistics) creates a dichotomized point between a level of a factor and all it's other levels. This was done using the `dummyVars` function in `caret`. 
+
+**INTERESTING?**. *In order to test if the KNN model was differentially affected by factors and dummy coded features, I first subset a portion of the original training and testing datasets, as well as the dummy coded training and testing datasets. Then the knn method was employed using the respective pairs and both ran successfully, though the accuracy and final k value differed (dummy model performed slightly better). Further investigation, mostly from a programmatic standpoint, is needed to better understand how the knn method and data handling processes are carried out within the caret package before knowing which is process is "better." to implement* 
+
+```{r, dummy, message=FALSE, warning=FALSE}
+#preprocess predictors - knn needs num values for factors
+dummy_coded = dummyVars(fct_waittime ~ ., data = mrg_dat_norm)
+
+dummies = data.frame(predict(dummy_coded, newdata = mrg_dat_norm)) %>% 
+  #the 'fct_waittime' factor is removed; dummy coding is f-1 
+  #combine criterion with new dataset
+  cbind('fct_waittime' = as.factor(mrg_dat_norm$fct_waittime))
+
+dummies_train = subset(dummies, sample == TRUE)
+dummies_test = subset(dummies, sample == FALSE)
+```
+
+KNNs can be computationally extensive, which was very much the case for this exercise. To complete the assignment, a subset of the data was used. A 5-fold cross validation was utilized with $k$ = 7 values.
+
+```{r, knn}
+#knn model
+#define train opts
+x_train = dummies_train[1:100000, ] #subset the data
+x_test = dummies_test[1:50000, ]
+ctrl = trainControl(method = 'cv', number = 5) #5 k-folds cross validation
+len = 7 #number of k
+
+knn_mod = caret::train(fct_waittime ~ .,  
+                       data = x_train, 
+                       method = 'knn', 
+                       trControl = ctrl, 
+                       tuneLength = len)
+
+knn_mod_pred = predict(knn_mod, x_test, type = 'raw')
+```
+
+# Discussion
+
+We can compare how the the logistic and KNN models performed using a confusion matrix. The KNN model did have a higher accuracy compared to the logit model but it doesn't stop there. Additional preprocessing of the data (checking multicollinearity, variable importance, etc.), KNN model tuning, and a variety of other tasks can be conducted to increase the predictive accuracy of the models.
+
+```{r, confusion_matrix}
+#confusion matrices for both models
+confusionMatrix(log_mod_pred, test$fct_waittime)
+confusionMatrix(knn_mod_pred, x_test$fct_waittime)
+```
