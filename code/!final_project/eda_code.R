@@ -17,8 +17,8 @@ dat = read_csv("../../data/final_df.csv",
                    extra_eve = col_factor(), 
                    event = col_factor(), 
                    timeofday = col_factor())
-               )
-                                
+)
+
 
 #summary statistics of dataframe
 dat %>% 
@@ -35,21 +35,30 @@ detect_outs <- function(dt, var) {
     par(mfrow = c(2, 2), oma = c(0, 0, 3, 0))
     
     boxplot(var_name, main = "With Outliers")
-    hist(var_name, main = "With outliers", xlab = NA, ylab = NA)
+    hist(var_name, main = "With Outliers", xlab = NA, ylab = NA)
     
     outlier <- boxplot.stats(var_name)$out
     mo <- mean(outlier)
-    var_name <- ifelse(var_name %in% outlier, NA, var_name)
     
-    boxplot(var_name, main = "Without Outliers")
-    hist(var_name, main = "Without Outliers", xlab = NA, ylab = NA)
+    cap_func = function(x) {
+        quants = quantile(x, probs = c(.25, .75), na.rm = TRUE)
+        caps = quantile(x, probs = c(.05, .95), na.rm = TRUE)
+        H = 1.5 * IQR(x, na.rm = TRUE)
+        
+        x[x < (quants[1] - H)] <- caps[1]
+        x[x > (quants[2] + H)] <- caps[2]
+        
+        x
+    }
+    
+    var_name <- ifelse(var_name %in% outlier, cap_func(var_name), var_name)
+    
+    boxplot(var_name, main = "With Capped Outliers")
+    hist(var_name, main = "With Capped Outliers", xlab = NA, ylab = NA)
     title("Outlier Check", outer = TRUE)
     
     na2 <- sum(is.na(var_name))
     
-    cat("Outliers identified:", na2 - na1, "n")
-    cat("Propotion (%) of outliers:", 
-        round((na2 - na1) / sum(!is.na(var_name)) * 100, 1), "n")
     cat("Mean of the outliers:", 
         round(mo, 2), "n")
     
@@ -59,39 +68,30 @@ detect_outs <- function(dt, var) {
         round(m1, 2), "n")
     cat("Mean if we remove outliers:", 
         round(m2, 2), "n")
+
+    dt[as.character(substitute(var))] <- invisible(var_name)
+    assign(as.character(as.list(match.call())$dt), dt, envir = .GlobalEnv)
     
-    response <- readline(
-        prompt = "Do you want to remove outliers and replace with NA? [yes/no]: ")
-    if (response == "y" | response == "yes") {
-        dt[as.character(substitute(var))] <- invisible(var_name)
-        assign(as.character(as.list(match.call())$dt), dt, envir = .GlobalEnv)
-        cat("Outliers successfully removed", "n")
-        return(invisible(dt))
-    } else {
-        cat("Nothing changed", "n")
-        return(invisible(var_name))
-    }
+    return(invisible(dt))
 }
 
-#note outliers and replace with NA - be sure to answer prompt = y!
+#cap outliers - disregarded features are commented out!
 dat2 = detect_outs(dat, waittime)
 dat2 = detect_outs(dat, holiday_prox)
+#dat2 = detect_outs(dat, holiday_rnk)
+dat2 = detect_outs(dat, temp_mean)
+#dat2 = detect_outs(dat, insesh_fl)
 dat2 = detect_outs(dat, total_hrs)
+#dat2 = detect_outs(dat, hist_precip)
 dat2 = detect_outs(dat, cap_lost)
-
-# #features to disregard - no outliers and/or little mean change
-# dat2 = detect_outs(dat, holiday_rnk)
-# dat2 = detect_outs(dat, temp_mean) 
-# dat2 = detect_outs(dat, insesh_fl)
-# dat2 = detect_outs(dat, hist_precip)
-# dat2 = detect_outs(dat, parades)
-# dat2 = detect_outs(dat, fireworks)
+#dat2 = detect_outs(dat, parades)
+#dat2 = detect_outs(dat, fireworks)
 
 #drop NA values from df
-dat_cln = drop_na(dat2)
+dat_cln = dat2
 
 #keep env clean :)
-rm(dat, dat2)
+rm(dat2)
 
 #transforom data using norm function
 normalize = function(x) {
@@ -103,8 +103,3 @@ normalize = function(x) {
 #normalize features
 dat_norm = dat_cln %>%
     mutate_if(is.numeric, normalize)
-
-
-
-
-
