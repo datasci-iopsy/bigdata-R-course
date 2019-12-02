@@ -84,17 +84,9 @@ mrg_dat = merge(pir, meta, by = 'date') %>%
     mutate_at(
         vars(contains("extra_")), as.factor)
 
-#final dataset
+#final clean dataset
 final_df = mrg_dat %>% 
     select(-c(date, datetime))
 
-#normalise the data
-normalize = function(x) {
-    return(
-        (x - min(x)) / (max(x) - min(x))
-    )
-}
-
-#normalized df
-final_df_norm = final_df %>% 
-    mutate_if(is.numeric, normalize)
+#write final dfs to excel files
+write_csv(final_df, path = "../../data/final_df.csv")
