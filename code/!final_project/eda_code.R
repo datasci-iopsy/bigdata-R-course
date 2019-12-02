@@ -19,6 +19,7 @@ dat = read_csv("../../data/final_df.csv",
                    timeofday = col_factor())
 )
 
+#### Outlier Analysis ####
 
 #summary statistics of dataframe
 dat %>% 
@@ -87,6 +88,8 @@ dat2 = detect_outs(dat, cap_lost)
 #dat2 = detect_outs(dat, parades)
 #dat2 = detect_outs(dat, fireworks)
 
+#####
+
 #drop NA values from df
 dat_cln = dat2
 
@@ -103,3 +106,13 @@ normalize = function(x) {
 #normalize features
 dat_norm = dat_cln %>%
     mutate_if(is.numeric, normalize)
+
+#### Correlation Analysis ####
+library(GGally)
+library(RColorBrewer)
+
+#fireworks doesn't load corr so it's rm
+ggcorr(select_if(dat_cln, is.numeric)[, -10], method = c("pairwise", "pearson"), 
+       digits = 3, label = TRUE, low = "#F21A00", high = "#3B9AB2")
+
+#####
