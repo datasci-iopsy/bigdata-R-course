@@ -11,10 +11,8 @@ shhh = function(...) {
 #load libraries
 shhh(tidyverse)
 shhh(lubridate)
-shhh(broom)
-shhh(psych)
 # library(pacman)
-# pacman::p_load("tidyverse", "broom", "psych", "lubridate")
+# pacman::p_load("tidyverse", "lubridate")
 
 #read in pirates of carribean data
 pir_raw = read_csv('../../data/disneydata/pirates_of_caribbean.csv', 
