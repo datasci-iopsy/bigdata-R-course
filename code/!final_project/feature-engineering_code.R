@@ -71,20 +71,23 @@ meta = meta_raw %>%
 mrg_dat = merge(pir, meta, by = 'date') %>% 
     mutate(
         datetime = strftime(datetime, format = '%H:%M'), 
-        timeofday = case_when(
+        timeofday = as.factor(case_when(
             datetime >= "05:00" & datetime <= "11:59" ~ "Morning",
             datetime >= "12:00" & datetime <= "15:59" ~ "Afternoon",
             datetime >= "16:00" & datetime <= "19:59" ~ "Evening",
             datetime >= "20:00" & datetime <= "23:59" ~ "Night",
             datetime >= "00:00" & datetime <= "04:59" ~ "Extended Hrs"
-        )
+        ))
     ) %>% 
     mutate_at(
-        vars(contains("extra_")), as.factor)
+        vars(contains("extra_")), as.factor 
+        )
 
 #final clean dataset
-final_df = mrg_dat %>% 
+dat = mrg_dat %>% 
     select(-c(date, datetime))
 
+rm(list = ls(pattern = "meta|pir|mrg"))
+
 #write final dfs to excel files
-write_csv(final_df, path = "../../data/final_df.csv")
+#write_csv(final_df, path = "../../data/final_df.csv")

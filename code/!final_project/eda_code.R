@@ -1,31 +1,38 @@
 #keep env clean
 rm(list = ls())
 
-#load libraries
-library(dplyr)
-library(readr)
-library(ggplot2)
-library(tidyr)
-library(tibble)
+# #load libraries
+# library(dplyr)
+# library(readr)
+# library(ggplot2)
+# library(tidyr)
+# library(tibble)
 
-#read in dataset
-dat = read_csv("../../data/final_df.csv", 
-               col_types = cols(
-                   month = col_factor(), 
-                   season = col_factor(), 
-                   extra_morn = col_factor(), 
-                   extra_eve = col_factor(), 
-                   event = col_factor(), 
-                   timeofday = col_factor())
-)
+# #read in dataset
+# dat = read_csv("../../data/final_df.csv", 
+#                col_types = cols(
+#                    month = col_factor(), 
+#                    season = col_factor(), 
+#                    extra_morn = col_factor(), 
+#                    extra_eve = col_factor(), 
+#                    event = col_factor(), 
+#                    timeofday = col_factor())
+# )
 
-#### Outlier Analysis ####
+#load df from feature code
+source("feature-engineering_code.R")
 
-#summary statistics of dataframe
+#df structure
+cat("The dataframe has", dim(dat)[1], "rows and", dim(dat)[2], "features")
+str(dat)
+
+#summary statistics of df
 dat %>% 
     select_if(is.numeric) %>%
     sapply(function(x) summary(x)) %>% 
     round(2)
+
+#### Outlier Analysis ####
 
 #outlier detection
 detect_outs <- function(dt, var) { 
@@ -90,8 +97,11 @@ dat2 = detect_outs(dat, cap_lost)
 
 #####
 
-#drop NA values from df
-dat_cln = dat2
+cat_vars = names(dat_fnl)[which(sapply(dat_fnl, is.factor))]
+cont_vars = names(dat_fnl[which(sapply(dat_fnl, is.numeric))])
+
+#rename df
+dat_fnl = dat2
 
 #keep env clean :)
 rm(dat2)
@@ -104,15 +114,71 @@ normalize = function(x) {
 }
 
 #normalize features
-dat_norm = dat_cln %>%
+dat_norm = dat_fnl %>%
     mutate_if(is.numeric, normalize)
 
 #### Correlation Analysis ####
+
 library(GGally)
 library(RColorBrewer)
+#library(corrplot)
 
 #fireworks doesn't load corr so it's rm
-ggcorr(select_if(dat_cln, is.numeric)[, -10], method = c("pairwise", "pearson"), 
+ggcorr(select_if(dat_fnl, is.numeric)[, -10], method = c("pairwise", "pearson"), 
        digits = 3, label = TRUE, low = "#F21A00", high = "#3B9AB2")
 
+# ggpairs(dat_fnl, columns = c("waittime", "holiday_prox", "holiday_rnk"), 
+#         ggplot2::aes(color = timeofday, alpha = .03))
+# ggpairs(dat_fnl, columns = c("waittime", "temp_mean", "hist_precip"), 
+#         ggplot2::aes(color = timeofday, alpha = .03))
 #####
+
+#categorical variables
+cat_vars = select_if(dat_fnl, is.factor)
+
+#continuous variables
+cont_vars = select_if(dat_fnl, is.numeric)
+
+plotHist <- function(data_in, i) {
+    data <- data.frame(x = data_in[[i]])
+    p <- ggplot(data = data, aes(x = factor(x))) + 
+            stat_count() + 
+            xlab(colnames(data_in)[i]) + 
+            theme_light() + 
+                theme(axis.text.x = element_text(angle = 90, hjust =1))
+    return (p)
+}
+
+doPlots <- function(data_in, fun, ii, ncol = 3) {
+    pp <- list()
+    for (i in ii) {
+        p <- fun(data_in = data_in, i=i)
+        pp <- c(pp, list(p))
+    }
+    do.call("grid.arrange", c(pp, ncol=ncol))
+}
+
+plotDen <- function(data_in, i) {
+    data <- data.frame(x = data_in[[i]], waittime = data_in$waittime)
+    p <- ggplot(data = data) + 
+            geom_line(aes(x = x), stat = 'density', size = 1,alpha = 1.0) + 
+            xlab(paste0((colnames(data_in)[i]), '\n', 'Skewness: ', 
+                        round(skewness(data_in[[i]], na.rm = TRUE), 2))) + 
+            theme_light() 
+    return(p)
+}
+
+doPlots(cat_vars, fun = plotHist, ii = 1:6, ncol = 3)
+
+#continuous variables
+doPlots(cont_vars, fun = plotDen, ii = 1:10, ncol = 2)
+
+#violin plots
+dat_fnl %>%
+    ggplot(aes(x = season, y = temp_mean, fill = season)) + 
+    geom_violin() +
+    xlab("class") +
+    theme(legend.position="none") +
+    xlab("")
+
+                
