@@ -8,7 +8,7 @@ With the proliferation of big data throughout organizations, psychologists, espe
 
 This course is designed to (1) provide an overview of machine learning methods and principles; (2) compare and contrast empirically derived data exploration with thoery-based traditional approaches of data analysis; and (3) provide experience with using R for data analytic methods. 
 
-## Resources**
+## Resources
 
 - [R for Data Science](https://r4ds.had.co.nz/)
 - [Data Science for Social Scientists](http://datascience.tntlab.org/schedule-materials/)
