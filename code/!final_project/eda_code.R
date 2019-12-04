@@ -1,14 +1,11 @@
-#keep env clean
-rm(list = ls())
+rm(list = ls()) #keep env clean
 
+#uncomment lines below if one prefers NOT to source scripts!
 # #load libraries
-# library(dplyr)
-# library(readr)
-# library(ggplot2)
-# library(tidyr)
-# library(tibble)
+# library(tidyverse)
+# library(data.table)
 
-# #read in dataset
+# #read in dataset - feature attributes must be specified from csv files...
 # dat = read_csv("../../data/final_df.csv", 
 #                col_types = cols(
 #                    month = col_factor(), 
@@ -19,7 +16,7 @@ rm(list = ls())
 #                    timeofday = col_factor())
 # )
 
-#load df from feature code
+#load feature enginnering script
 source("feature-engineering_code.R")
 
 #df structure
@@ -27,8 +24,7 @@ cat("The dataframe has", dim(dat)[1], "rows and", dim(dat)[2], "features")
 str(dat)
 
 #summary statistics of df
-dat %>% 
-    select_if(is.numeric) %>%
+select_if(dat, is.numeric) %>%
     sapply(function(x) summary(x)) %>% 
     round(2)
 
@@ -83,7 +79,7 @@ detect_outs <- function(dt, var) {
     return(invisible(dt))
 }
 
-#cap outliers - disregarded features are commented out!
+#cap outliers - disregarded features are commented out
 dat2 = detect_outs(dat, waittime)
 dat2 = detect_outs(dat, holiday_prox)
 #dat2 = detect_outs(dat, holiday_rnk)
@@ -97,10 +93,7 @@ dat2 = detect_outs(dat, cap_lost)
 
 #####
 
-cat_vars = names(dat_fnl)[which(sapply(dat_fnl, is.factor))]
-cont_vars = names(dat_fnl[which(sapply(dat_fnl, is.numeric))])
-
-#rename df
+#rename df w/ capped features
 dat_fnl = dat2
 
 #keep env clean :)
@@ -113,72 +106,139 @@ normalize = function(x) {
     )
 }
 
-#normalize features
+#normalize all numeric features
 dat_norm = dat_fnl %>%
     mutate_if(is.numeric, normalize)
 
 #### Correlation Analysis ####
 
-library(GGally)
-library(RColorBrewer)
-#library(corrplot)
+shhh(GGally)
+shhh(RColorBrewer)
 
-#fireworks doesn't load corr so it's rm
-ggcorr(select_if(dat_fnl, is.numeric)[, -10], method = c("pairwise", "pearson"), 
-       digits = 3, label = TRUE, low = "#F21A00", high = "#3B9AB2")
+#disregarded features: fireworks
+ggcorr(select_if(dat_fnl, is.numeric)[, -10], 
+       method = c("pairwise", "pearson"), 
+       label = TRUE, label_size = 5,
+       low = "#F21A00", high = "#3B9AB2", 
+       hjust = .75, 
+       size = 5, 
+       layout.exp = 1,
+       ) +
+    ggplot2::labs(
+        title = "Correlations of Selected Features", 
+        subtitle = "Disney\'s Pirates of the Carribean"
+        ) + 
+    ggplot2::theme(
+        plot.title = element_text(size = 20, face = "bold"), 
+        plot.subtitle = element_text(size = 14)
+    )
 
-# ggpairs(dat_fnl, columns = c("waittime", "holiday_prox", "holiday_rnk"), 
-#         ggplot2::aes(color = timeofday, alpha = .03))
-# ggpairs(dat_fnl, columns = c("waittime", "temp_mean", "hist_precip"), 
-#         ggplot2::aes(color = timeofday, alpha = .03))
 #####
 
-#categorical variables
-cat_vars = select_if(dat_fnl, is.factor)
+#### EDA Viz ####
+library(cowplot)
+library(gridExtra)
 
-#continuous variables
-cont_vars = select_if(dat_fnl, is.numeric)
+#create dfs with categorical & continuous variables
+sep_vars = list(
+    cat_vars = dat_fnl[which(sapply(dat_fnl, is.factor))], 
+    cont_vars = dat_fnl[which(sapply(dat_fnl, is.numeric))]
+)
 
-plotHist <- function(data_in, i) {
-    data <- data.frame(x = data_in[[i]])
-    p <- ggplot(data = data, aes(x = factor(x))) + 
-            stat_count() + 
-            xlab(colnames(data_in)[i]) + 
-            theme_light() + 
-                theme(axis.text.x = element_text(angle = 90, hjust =1))
-    return (p)
-}
+#create a list with freq table for each feature
+freqList = lapply(sep_vars[["cat_vars"]], 
+                  function(x) {
+                      
+                      my_lst = data.frame(table(x))
+                      names(my_lst) = c("fct", "n")
+                      
+                      return(my_lst) 
+                        }
+                    )
+freqList
 
-doPlots <- function(data_in, fun, ii, ncol = 3) {
-    pp <- list()
-    for (i in ii) {
-        p <- fun(data_in = data_in, i=i)
-        pp <- c(pp, list(p))
-    }
-    do.call("grid.arrange", c(pp, ncol=ncol))
-}
-
-plotDen <- function(data_in, i) {
-    data <- data.frame(x = data_in[[i]], waittime = data_in$waittime)
-    p <- ggplot(data = data) + 
-            geom_line(aes(x = x), stat = 'density', size = 1,alpha = 1.0) + 
-            xlab(paste0((colnames(data_in)[i]), '\n', 'Skewness: ', 
-                        round(skewness(data_in[[i]], na.rm = TRUE), 2))) + 
-            theme_light() 
+#function to automate lolipop plots
+plotLoli <- function(data_in, i, ...) {
+    args = list(...)
+    
+    data <- data_in[[i]]  
+    
+    p <- ggplot(data = data, aes(x = fct, y = n, label = n)) + 
+            geom_point(size = 3, color = "red", alpha = .6, shape = 20, 
+                       stroke = 2) + 
+            geom_segment(aes(x = fct, xend = fct, y = 0, yend = n), 
+                         color = "black") + 
+            coord_flip() + 
+            theme_minimal() + 
+            labs(title = " ", 
+                 x = str_to_title(i), 
+                 y = "Total Count") +
+        #geom_text(nudge_x = .45) +
+            theme(panel.grid.major.y = element_blank(), 
+                  panel.border = element_blank(), 
+                  axis.ticks.y = element_blank(), 
+                  legend.position = 'none')
+    
     return(p)
 }
 
-doPlots(cat_vars, fun = plotHist, ii = 1:6, ncol = 3)
+#list of lolipop plots
+loliList = list(
+    p_month = plotLoli(data_in = freqList, i = "month"),
+    p_extmorn = plotLoli(data_in = freqList, i = "extra_morn"), 
+    p_time = plotLoli(data_in = freqList, i = "timeofday"),
+    p_season = plotLoli(data_in = freqList, i = "season"), 
+    p_exteve = plotLoli(data_in = freqList, i = "extra_eve"),
+    p_event = plotLoli(data_in = freqList, i = "event")
+    )
 
-#continuous variables
-doPlots(cont_vars, fun = plotDen, ii = 1:10, ncol = 2)
+# title of graphs
+title = ggdraw() + 
+    draw_label(
+        "Frequency Tables of Categorical Features",
+        fontface = "bold"
+        )
+        
+#categorical plots with titles! - save both separately
+plot_grid(title, plotlist = loliList[c(1, 4, 3)], ncol = 2, 
+          rel_heights = c(.1, .1))
+plot_grid(title, plotlist = loliList[c(2, 5, 6)], ncol = 2, 
+          rel_heights = c(.1, .1))
 
-#violin plots
-dat_fnl %>%
-    ggplot(aes(x = season, y = temp_mean, fill = season)) + 
-    geom_violin() +
-    xlab("class") +
-    theme(legend.position="none") +
-    xlab("")
+#density plots for continuous features
+plotDen <- function(data_in, i) {
+    data <- data.frame(x = data_in[[i]], waittime = data_in$waittime)
+    
+    p <- ggplot(data = data) + 
+            geom_line(aes(x = x), stat = 'density', size = 1, alpha = 1.0) + 
+        xlab(paste0(
+            (colnames(data_in)[i]), '\n', 'Skewness: ', 
+                    round(skewness(data_in[[i]], na.rm = TRUE), 2))
+            ) + 
+        theme_minimal() 
+    
+    return(p)
+}
 
-                
+#arrange graphs for continuous features
+doPlots <- function(data_in, fun, ii, ncol = 3) {
+    pp <- list()
+    
+    for (i in ii) {
+        p <- fun(data_in = data_in, i = i)
+        pp <- c(pp, list(p))
+    }
+    
+    do.call("grid.arrange", c(pp, ncol = ncol))
+}
+
+#density plots!
+doPlots(sep_vars[["cont_vars"]], fun = plotDen, ii = 2:10, ncol = 3)
+
+##plot the waittimes for each time of day by c(month, season) possible facets?
+
+#histogram of response variable!
+ggplot(dat_fnl, aes(x = waittime)) + 
+    geom_histogram(col = 'black', fill = "darkgray", bins = 40, binwidth = 5) + 
+    theme_minimal() + 
+    scale_x_continuous()
