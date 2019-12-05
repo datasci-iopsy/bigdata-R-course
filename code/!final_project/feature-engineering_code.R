@@ -40,36 +40,101 @@ meta = meta_raw %>%
     rename_all(list(tolower)) %>% #changes column names to lowercase
     select(
         date, 
+        "day" = dayofweek,
+        "week" = weekofyear, 
         'month' = monthofyear, 
         season, 
         'holiday_prox' = holidaypx,
         'holiday_rnk' = holidaym, 
+        'holiday_name' = holidayn, 
+        'holiday_YorN' = holiday, 
+        'wdw_event_code' = wdwevent, 
+        'wdw_race' = wdwrace, 
         'temp_mean' = wdwmeantemp, 
+        'temp_max' = wdwmaxtemp, 
+        'temp_min' = wdwmintemp, 
+        'mk_event' = mkeventn, 
+        'ep_event' = epeventn, 
+        'hs_event' = hseventn, 
+        'ak_event' = akeventn,
+        'insesh_all' = insession, 
+        'insesh_sqrt' = insession_sqrt_wdw,
+        'insesh_cntrl_fl' = insession_central_fl, 
         'insesh_fl' = insession_florida,
-        'extra_morn' = mkemhmorn, 
-        'extra_eve' = mkemheve, 
-        'total_hrs' = mkhoursemh,
+        'mk_extra_morn' = mkemhmorn, 
+        'mk_extra_eve' = mkemheve, 
+        'mk_total_hrs' = mkhoursemh,
+        'ep_extra_morn' = epemhmorn, 
+        'ep_extra_eve' = epemheve, 
+        'ep_total_hrs' = ephoursemh,
+        'hs_extra_morn' = hsemhmorn, 
+        'hs_extra_eve' = hsemheve, 
+        'hs_total_hrs' = hshoursemh,
+        'ak_extra_morn' = akemhmorn, 
+        'ak_extra_eve' = akemheve, 
+        'ak_total_hrs' = akhoursemh,
         'event' = partyseason_wdw, 
         'hist_precip' = weather_wdwprecip, 
-        'cap_lost' = capacitylost_mk, 
-        'parades' = mkprdday, 
-        'fireworks' = mkfirewk,
+        'mk_cap_lost' = capacitylost_mk, 
+        'ep_cap_lost' = capacitylost_ep, 
+        'hs_cap_lost' = capacitylost_hs, 
+        'ak_cap_lost' = capacitylost_ak, 
+        'mk_day_parades' = mkprdday, 
+        'mk_fireworks' = mkfirewk,
+        'ep_fireworks' = epfirewk, 
+        'hs_day_parades' = hsprdday, 
+        'hs_fireworks' = hsfirewk, 
+        'hs_nightshows' = hsshwngt, 
+        'ak_day_parades' = akprdday, 
+        'ak_nightshows' = akshwngt
         ) %>% 
     mutate(
         date = mdy(date), #changes date format to match pir_raw
         #change fct levels 
+        day = recode(factor(day), 
+                     `1` = 'Sun', `2` = 'Mon', `3` = 'Tues', `4` = 'Wed', 
+                     `5` = 'Thurs', `6` = 'Fri', `7` = 'Sat'), 
         month = recode(factor(month), 
                        `1` = 'Jan', `2` = 'Feb', `3` = 'Mar', `4` = 'Apr', 
                        `5` = 'May', `6` = 'Jun', `7` = 'July', `8` = 'Aug', 
                        `9` = 'Sept', `10` = 'Oct', `11` = 'Nov', `12` = 'Dec'),
         #change season to title case; shorten MLK Jr day
-        season = recode(factor(str_to_title(season)), 
+        season = recode(factor(str_to_title(season)),
                         "Martin Luther King Junior Day" = "MLK Jr. Day"),
-        insesh_fl = parse_number(insesh_fl) / 100, #percentage 
+        holiday_name = str_to_upper(holiday_name), 
+        holiday_YorN = recode(factor(holiday_YorN),
+                              `0` = 'No', `1` = 'Yes'), 
+        wdw_event_code = recode(factor(wdw_event_code), 
+                                `0` = "No Event", `1` = "Some Event"), 
+        wdw_race = recode(factor(wdw_race),
+                          `0` = "No Race", `1` = "Some Race"),
+        # ***mk_event, ep_event, ak_event all need to drop_&_replace NA for factor, 
         event = factor(str_to_upper(event)) #change codes to upper case
-    ) %>%
-    mutate_if(is.numeric, list(as.double)) %>% 
-    drop_na() #drop NAs
+    ) %>% 
+    # mutate_at(
+    #     vars(starts_with("insesh_")), parse_number
+    # ) %>%
+    mutate_if(is.numeric, list(as.double))
+
+#to handle multiple mutate_at calls
+mutate2 <- function(data, .vars, .funs) {
+    stopifnot(length(.vars) == length(.funs))
+    
+    for (i in seq_along(.vars)) {
+        data <- mutate_at(data, .vars[[i]], .funs[[i]])
+    }
+    data
+}
+
+meta = meta %>% 
+    mutate2(
+        list(vars(starts_with("insesh_")), vars(ends_with("_event")), 
+             vars(ends_with("_name"))), 
+        list(~ parse_number(.) / 100, ~ replace_na(., "NONE"), 
+             ~replace_na(., "No Holiday"))
+    ) %>% 
+    mutate_if(is.character, as.factor)
+
 
 #merge datasets by date
 mrg_dat = merge(pir, meta, by = 'date') %>% 
@@ -90,9 +155,8 @@ mrg_dat = merge(pir, meta, by = 'date') %>%
 
 #final wrangled dataset
 dat = mrg_dat %>% 
-    select(-c(date, datetime)) #rm date and datetime features
+    select(-datetime) %>%  #rm date and datetime features
+    drop_na()
 
-rm(list = ls(pattern = "meta|pir|mrg")) #keep env cln for sourcing!
+rm(list = ls(pattern = "meta|pir|mrg|mutate|shhh")) #keep env cln for sourcing!
 
-#write final df to data path if one prefers reading in files
-#write_csv(final_df, path = "../../data/final_df.csv")
