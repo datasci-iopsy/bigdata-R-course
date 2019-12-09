@@ -130,8 +130,8 @@ corrplot(corrs, type = "lower", diag = FALSE, method = "circle", tl.pos = "ld",
 #####
 
 #### EDA Viz ####
-shhh(cowplot) #masks libridate::stamp
-shhh(gridExtra) #masks 'dplyr::combine
+library(cowplot) #masks libridate::stamp
+library(gridExtra) #masks 'dplyr::combine
 
 #create dfs with categorical & continuous variables
 sep_vars = list(
