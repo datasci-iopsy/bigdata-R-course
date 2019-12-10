@@ -2,6 +2,7 @@ rm(list = ls()) #keep env clean
 
 #load libraries
 library(dplyr)
+library(readr)
 library(caret)
 # library(xgboost)
 
@@ -21,7 +22,7 @@ glimpse(dummies) #all num features
 
 #using h2o package
 library(h2o)
-h2o.init(nthreads = -1)
+h2o.init(nthreads = -1, max_mem_size = "8G")
 
 h2o_df = as.h2o(dummies[, -151])
 
@@ -37,19 +38,20 @@ summary(gbm) #RMSE: .15; r^2: .58
 h2o.rmse(h2o.performance(gbm, newdata = h2oTest)) #.22 
 h2o.r2(h2o.performance(gbm, newdata = h2oTest)) #.24
 
-> gbm2 = h2o.gbm(x = features, 
-                 y = response, 
-                 training_frame = h2oTrain, 
-                 ntrees = 10000, 
-                 learn_rate = .01, 
-                 stopping_rounds = 5, 
-                 stopping_tolerance = .001,
-                 stopping_metric = "RMSE", 
-                 sample_rate = .6, 
-                 col_sample_rate = .6, 
-                 seed = 1879, 
-                 score_tree_interval = 5
-                 )
+#a few parameters
+gbm2 = h2o.gbm(x = features, 
+               y = response, 
+               training_frame = h2oTrain, 
+               ntrees = 5000, 
+               learn_rate = .01, 
+               stopping_rounds = 5, 
+               stopping_tolerance = .001, 
+               stopping_metric = "RMSE", 
+               sample_rate = .6, 
+               col_sample_rate = .6, 
+               seed = 1879, 
+               score_tree_interval = 5 
+               )
 summary(gbm2) #RMSE: .15; r^2: .60
 
 h2o.rmse(h2o.performance(gbm2, newdata = h2oTest)) #RMSE up to .22
@@ -66,7 +68,7 @@ grid = h2o.grid(
     y = response,
     training_frame = h2oTrain,
     validation_frame = h2oTest,
-    ntrees = 1000, 
+    ntrees = 500, 
     #faster scan - to improve performance use ^learn_ values: .02 & .995
     learn_rate = .05, 
     learn_rate_annealing = .99, 
@@ -95,7 +97,7 @@ maxDepth
 
 #final run with optimized hyperparameters
 hyper_params_opt = list(
-    max_depth = seq(minDepth, maxDepth, 1), 
+    max_depth = seq(4, 16, 1), 
     sample_rate = seq(.2, 1, .01), 
     col_sample_rate = seq(.2, 1, .01), 
     col_sample_rate_per_tree = seq(.2, 1, .01), 
@@ -125,7 +127,7 @@ grid_opt = h2o.grid(
     y = response, 
     training_frame = h2oTrain, 
     validation_frame = h2oTest, 
-    ntrees = 10000, 
+    ntrees = 500, 
     learn_rate = .05, 
     learn_rate_annealing = .99, 
     # max_runtime_seconds = 7200,
@@ -147,11 +149,25 @@ for (i in 1:5) {
 
 #model inspection and test set scoring
 gbmBest <- h2o.getModel(sortedGrid@model_ids[[1]])
-print(h2o.rmse(h2o.performance(gbmBest, newdata = test)))
+print(h2o.rmse(h2o.performance(gbmBest, newdata = h2oTest))) #RMSE: .21
 
 gbmBest@parameters
 
+mod_cv <- do.call(h2o.gbm,
+                 ## update parameters in place
+                 {
+                     p <- gbm@parameters
+                     p$model_id = NULL          ## do not overwrite the original grid model
+                     p$training_frame = h2o_df  ## use the full dataset
+                     p$validation_frame = NULL  ## no validation frame
+                     p$nfolds = 5               ## cross-validation
+                     p
+                 }
+)
+mod_cv@model$cross_validation_metrics_summary
 
+pred_gbm = h2o.predict(gbmBest, newdata = h2oTest)
+pred_gbm #.38 prediction rate!
 
 
 
