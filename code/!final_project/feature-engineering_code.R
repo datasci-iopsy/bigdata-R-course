@@ -1,12 +1,10 @@
 #keep env clean
-rm(list = ls())
+#rm(list = ls())
 
-#keep it down!
 shhh = function(...) {
     suppressWarnings(
         suppressPackageStartupMessages(base::library(...))
-    )
-}
+    )}
 
 #load libraries
 shhh(tidyverse)
@@ -108,18 +106,15 @@ meta = meta_raw %>%
                                 `0` = "No Event", `1` = "Some Event"), 
         wdw_race = recode(factor(wdw_race),
                           `0` = "No Race", `1` = "Some Race"),
-        # ***mk_event, ep_event, ak_event all need to drop_&_replace NA for factor, 
+        # *mk_event, ep_event, ak_event all need to drop_&_replace NA for factor, 
         event = factor(str_to_upper(event)) #change codes to upper case
     ) %>% 
-    # mutate_at(
-    #     vars(starts_with("insesh_")), parse_number
-    # ) %>%
     mutate_if(is.numeric, list(as.double))
 
-#to handle multiple mutate_at calls
+# #to handle multiple mutate_at calls
 mutate2 <- function(data, .vars, .funs) {
     stopifnot(length(.vars) == length(.funs))
-    
+
     for (i in seq_along(.vars)) {
         data <- mutate_at(data, .vars[[i]], .funs[[i]])
     }
@@ -158,5 +153,5 @@ dat = mrg_dat %>%
     select(-datetime) %>%  #rm date and datetime features
     drop_na()
 
-rm(list = ls(pattern = "meta|pir|mrg|mutate|shhh")) #keep env cln for sourcing!
+rm(list = ls(pattern = "meta|pir|mrg")) #keep env cln for sourcing!
 
