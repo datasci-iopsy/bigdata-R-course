@@ -271,8 +271,8 @@ dat_norm = dat_cap %>%
     mutate_if(is.numeric, normalize)
     # add_column("date" = dat[, 1], .before = 1)
 
-#write out the final normalized df
-write_csv(dat_norm, path = "../../data/finalnorm_df.csv")
+#write out the final normalized df if wanted
+#write_csv(dat_norm, path = "../../data/finalnorm_df.csv")
 
 rm(list=setdiff(ls(), "dat_norm"))
 
