@@ -107,6 +107,7 @@ cor_sorted <- as.matrix(sort(corrs[,'waittime'], decreasing = TRUE))
 CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.5)))
 corrs <- corrs[CorHigh, CorHigh]
 
+dev.off()
 #disregarded features: fireworks
 corrplot(corrs, type = "lower", diag = FALSE, method = "circle", tl.pos = "ld", 
          tl.srt = 45, tl.col = "black", tl.offset = .5, tl.cex = .75
@@ -135,18 +136,18 @@ library(gridExtra) #masks 'dplyr::combine
 
 #create dfs with categorical & continuous variables
 sep_vars = list(
-    cat_vars = dat_cap[which(sapply(dat_cap, is.factor))], 
+    cat_vars = dat_cap[which(sapply(dat_cap, is.factor))],
     cont_vars = dat_cap[which(sapply(dat_cap, is.numeric))]
     )
 
 #create a list with freq table for each feature
-freqList = lapply(sep_vars[["cat_vars"]], 
+freqList = lapply(sep_vars[["cat_vars"]],
                   function(x) {
-                      
+
                       my_lst = data.frame(table(x))
                       names(my_lst) = c("fct", "n")
-                      
-                      return(my_lst) 
+
+                      return(my_lst)
                         }
                     )
 freqList
